@@ -33,7 +33,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define MAX_OPTION_CHANGED_BY_USER_BUTTON 5
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -47,8 +47,9 @@ I2C_HandleTypeDef hi2c2;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-int row=0;
-int col=0;
+uint8_t row=0;
+uint8_t col=0;
+volatile uint8_t pin_counter = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -71,6 +72,18 @@ int __io_putchar(int ch)
     HAL_UART_Transmit(&huart2, (uint8_t*)&ch, 1, HAL_MAX_DELAY);
     return 1;
 }
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == USER_BUTTON_Pin) {
+	  if(pin_counter<MAX_OPTION_CHANGED_BY_USER_BUTTON){
+		  pin_counter++;
+	  } else {
+		  pin_counter = 0;
+	  }
+  }
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -106,13 +119,13 @@ int main(void)
   /* USER CODE BEGIN 2 */
   lcd_init ();
 
-  lcd_send_string ("HELLO WORLD");
+  lcd_send_string ("LCD_16X2_I2C");
 
   HAL_Delay(1000);
 
   lcd_put_cur(1, 0);
 
-  lcd_send_string("from CTECH");
+  lcd_send_string("M.Posadowski");
 
   HAL_Delay(2000);
 
@@ -121,23 +134,19 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  uint8_t pin_counter_old = 0;
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  for (int i=0;i<128;i++)
-	  {
-		  lcd_put_cur(row, col);
-
-		  lcd_send_data(i+48);
-
-		  col++;
-
-		  if (col > 15) {row++; col = 0;}
-		  if (row > 1) row=0;
-
-		  HAL_Delay(250);
+	  if(pin_counter_old != pin_counter){
+		  lcd_clear();
+		  lcd_put_cur(0,0);
+		  char data_to_send[20];
+		  snprintf(data_to_send, sizeof(data_to_send), "pin counter: %u", pin_counter);
+		  lcd_send_string(data_to_send);
+		  pin_counter_old = pin_counter;
 	  }
   }
   /* USER CODE END 3 */
@@ -276,11 +285,11 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : B1_Pin */
-  GPIO_InitStruct.Pin = B1_Pin;
+  /*Configure GPIO pin : USER_BUTTON_Pin */
+  GPIO_InitStruct.Pin = USER_BUTTON_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(USER_BUTTON_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
@@ -288,6 +297,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
