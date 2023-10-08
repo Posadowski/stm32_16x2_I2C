@@ -21,6 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
+#include <string.h>
 #include "i2c-lcd.h"
 /* USER CODE END Includes */
 
@@ -60,7 +62,15 @@ static void MX_I2C2_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+int __io_putchar(int ch)
+{
+	if(ch == '\n'){
+		uint8_t ch2 ='\r';
+		HAL_UART_Transmit(&huart2, &ch2, 1, HAL_MAX_DELAY); //automatically add '/r/n' characters when encountered at the \n
+	}
+    HAL_UART_Transmit(&huart2, (uint8_t*)&ch, 1, HAL_MAX_DELAY);
+    return 1;
+}
 /* USER CODE END 0 */
 
 /**
