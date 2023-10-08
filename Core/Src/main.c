@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "i2c-lcd.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,7 +45,8 @@ I2C_HandleTypeDef hi2c2;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+int row=0;
+int col=0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -93,7 +94,19 @@ int main(void)
   MX_USART2_UART_Init();
   MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
+  lcd_init ();
 
+  lcd_send_string ("HELLO WORLD");
+
+  HAL_Delay(1000);
+
+  lcd_put_cur(1, 0);
+
+  lcd_send_string("from CTECH");
+
+  HAL_Delay(2000);
+
+  lcd_clear ();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -103,6 +116,19 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	  for (int i=0;i<128;i++)
+	  {
+		  lcd_put_cur(row, col);
+
+		  lcd_send_data(i+48);
+
+		  col++;
+
+		  if (col > 15) {row++; col = 0;}
+		  if (row > 1) row=0;
+
+		  HAL_Delay(250);
+	  }
   }
   /* USER CODE END 3 */
 }
