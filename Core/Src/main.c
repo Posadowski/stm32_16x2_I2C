@@ -82,11 +82,21 @@ int __io_putchar(int ch)
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   if (GPIO_Pin == USER_BUTTON_Pin) {
-	  if(pin_counter<MAX_OPTION_CHANGED_BY_USER_BUTTON){
-		  pin_counter++;
-	  } else {
-		  pin_counter = 0;
-	  }
+//	  if(pin_counter<MAX_OPTION_CHANGED_BY_USER_BUTTON){
+//		  pin_counter++;
+//	  } else {
+//		  pin_counter = 0;
+//	  }
+	    if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET)
+	    {
+	      // The button has been pressed.sloping slope
+	      buttonPressStartTime = HAL_GetTick();
+	    }
+	    else
+	    {
+	      // The button has been released. rising slope
+	      buttonPressDuration = HAL_GetTick() - buttonPressStartTime;
+	    }
   }
 }
 
@@ -141,19 +151,39 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  uint8_t pin_counter_old = 0;
+  uint8_t shortPressCounter_old, longPressCounter_old  = 0;
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  if(pin_counter_old != pin_counter){
+	  if (buttonPressDuration >= 1000) {
+	       if(longPressCounter<MAX_OPTION_CHANGED_BY_USER_BUTTON){
+	    	   longPressCounter++;
+	       } else {
+	    	   longPressCounter = 0;
+	       }
+	       buttonPressDuration = 0;
+	     } else if (buttonPressDuration > 100) {
+		       if(shortPressCounter<MAX_OPTION_CHANGED_BY_USER_BUTTON){
+		    	   shortPressCounter++;
+		       } else {
+		    	   shortPressCounter = 0;
+		       }
+		       buttonPressDuration = 0;
+	     }
+	  if(shortPressCounter_old != shortPressCounter || longPressCounter_old != longPressCounter){
 		  lcd_clear();
 		  lcd_put_cur(0,0);
 		  char data_to_send[20];
-		  snprintf(data_to_send, sizeof(data_to_send), "pin counter: %u", pin_counter);
+		  snprintf(data_to_send, sizeof(data_to_send), "shortCounter: %u", shortPressCounter);
 		  lcd_send_string(data_to_send);
-		  pin_counter_old = pin_counter;
+		  lcd_put_cur(1,0);
+		  memset(data_to_send, 0, sizeof(data_to_send));
+		  snprintf(data_to_send, sizeof(data_to_send), "longCounter: %u", longPressCounter);
+		  lcd_send_string(data_to_send);
+		  shortPressCounter_old = shortPressCounter;
+		  longPressCounter_old = longPressCounter;
 	  }
   }
   /* USER CODE END 3 */
