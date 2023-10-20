@@ -21,9 +21,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>
-#include <string.h>
 #include "i2c-lcd.h"
+#include "onewire.h"
+#include "ds18b20.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -33,7 +33,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define MAX_OPTION_CHANGED_BY_USER_BUTTON 5
+#define DISPLAY_MODES_NUMBER 1 //counted from 0
+#define OPTIONS_COUNTS 4
+#define true 1
+#define false 0
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -44,17 +47,33 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c2;
 
+TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-uint8_t row=0;
-uint8_t col=0;
-volatile uint8_t shortPressCounter = 0;
+volatile uint8_t shortPressCounter = 1;
 volatile uint8_t longPressCounter = 0;
 volatile uint32_t buttonPressStartTime = 0;
 volatile uint32_t buttonPressDuration = 0;
+float temperature;
+char message[64];
+
+enum display_mode{
+	DISPLAY_MENU,
+	DISPLAY_DS18B20
+};
+
+enum options_tabs{
+	OPTION_UKNOWN = 0,
+	OPTION_SHOW_SENSOR_COUNT = 1,
+	OPTION_SHOW_SENSOR_RESOLUTION = 2,
+	OPTION_SHOW_HAL_VERSION = 3,
+	OPTION_SHOW_DEVICE_AUTHOR = 4
+};
+enum display_mode selected_display_mode;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -63,6 +82,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -100,6 +120,13 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   }
 }
 
+void delay (uint16_t time)
+{
+	/* change your code here for the delay in microseconds */
+	__HAL_TIM_SET_COUNTER(&htim1, 0);
+	while ((__HAL_TIM_GET_COUNTER(&htim1))<time);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -133,58 +160,159 @@ int main(void)
   MX_USART2_UART_Init();
   MX_I2C2_Init();
   MX_TIM3_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
+  HAL_TIM_Base_Start(&htim1);
   lcd_init ();
-
-  lcd_send_string ("LCD_16X2_I2C");
+  lcd_clear();
+  lcd_put_cur(0, 0);
+  lcd_send_string ("LCD temp");
 
   HAL_Delay(1000);
 
   lcd_put_cur(1, 0);
 
-  lcd_send_string("M.Posadowski");
+  lcd_send_string("by M.Posadowski");
 
-  HAL_Delay(2000);
+  HAL_Delay(1000);
 
   lcd_clear ();
+
+  DS18B20_Init(DS18B20_Resolution_12bits);
+
+  uint8_t ds18b20_sensor_count = DS18B20_Quantity();
+
+  lcd_display_ds18b20_count(ds18b20_sensor_count);
+  HAL_Delay(1000);
+  float *ds_18b20_tenp_old;
+
+  ds_18b20_tenp_old= (float *)malloc(ds18b20_sensor_count * sizeof(float));
+
+  if (ds_18b20_tenp_old == NULL) {
+	  lcd_clear();
+	  lcd_put_cur(0,0);
+	  lcd_send_string("Memory Error");
+      printf("Memory allocation error.\n");
+     while(1){
+
+     }
+  } else {
+	   for (int i = 0; i < ds18b20_sensor_count; i++) {
+		   ds_18b20_tenp_old[i] = 0;
+	    }
+  }
+
+  selected_display_mode = DISPLAY_DS18B20;
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  uint8_t shortPressCounter_old, longPressCounter_old  = 0;
+  //uint8_t shortPressCounter_old, longPressCounter_old  = 0;
+  uint8_t option_show = false;
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 	  if (buttonPressDuration >= 1000) {
-	       if(longPressCounter<MAX_OPTION_CHANGED_BY_USER_BUTTON){
+	       if(longPressCounter<DISPLAY_MODES_NUMBER){
 	    	   longPressCounter++;
+	    	   selected_display_mode = DISPLAY_MENU;
 	       } else {
+	    	   selected_display_mode = DISPLAY_DS18B20;
+	    	   uint8_t i = 0;
+	    	   for(i = 0; i < ds18b20_sensor_count; i++){
+	    		   ds_18b20_tenp_old[i] = 0; // reset array to proper display after switching dispaly_mode
+	    	   	}
 	    	   longPressCounter = 0;
 	       }
 	       buttonPressDuration = 0;
 	     } else if (buttonPressDuration > 100) {
-		       if(shortPressCounter<MAX_OPTION_CHANGED_BY_USER_BUTTON){
+		       if(shortPressCounter<OPTIONS_COUNTS){
 		    	   shortPressCounter++;
 		       } else {
-		    	   shortPressCounter = 0;
+		    	   shortPressCounter = 1;
 		       }
 		       buttonPressDuration = 0;
+		       option_show = false;
 	     }
-	  if(shortPressCounter_old != shortPressCounter || longPressCounter_old != longPressCounter){
-		  lcd_clear();
-		  lcd_put_cur(0,0);
-		  char data_to_send[20];
-		  snprintf(data_to_send, sizeof(data_to_send), "shortCounter: %u", shortPressCounter);
-		  lcd_send_string(data_to_send);
-		  lcd_put_cur(1,0);
-		  memset(data_to_send, 0, sizeof(data_to_send));
-		  snprintf(data_to_send, sizeof(data_to_send), "longCounter: %u", longPressCounter);
-		  lcd_send_string(data_to_send);
-		  shortPressCounter_old = shortPressCounter;
-		  longPressCounter_old = longPressCounter;
+	  switch (selected_display_mode){
+	  	  case DISPLAY_MENU:
+	  		  if(!option_show){
+				  switch(shortPressCounter){
+				  case OPTION_SHOW_SENSOR_COUNT:
+					  lcd_display_ds18b20_count(ds18b20_sensor_count);
+					  break;
+				  case OPTION_SHOW_SENSOR_RESOLUTION:
+					  lcd_clear();
+					  lcd_put_cur(0,0);
+					  lcd_send_string("DS18B20 ");
+					  lcd_put_cur(1,0);
+					  lcd_send_string("Res. 12bits");
+					  break;
+				  case OPTION_SHOW_HAL_VERSION:
+					  lcd_clear();
+					  lcd_put_cur(0,0);
+					  char hal_version_string[16];
+					  snprintf(hal_version_string, sizeof(hal_version_string), "HAL ver. %lu",HAL_GetHalVersion());
+					  lcd_send_string(hal_version_string);
+					  break;
+				  case OPTION_SHOW_DEVICE_AUTHOR:
+					  lcd_clear();
+					  lcd_put_cur(0,0);
+					  lcd_send_string ("LCD temp");
+					  HAL_Delay(1000);
+					  lcd_put_cur(1, 0);
+					  lcd_send_string("by M.Posadowski");
+					  break;
+				  case OPTION_UKNOWN:
+					  lcd_clear();
+					  lcd_put_cur(0,0);
+					  lcd_send_string("Unknown option ");
+					  lcd_put_cur(1,0);
+					  lcd_send_string("     ERROR!");
+					  break;
+				  default:
+					  lcd_clear();
+					  lcd_put_cur(0,0);
+					  lcd_send_string("Unknown option ");
+					  lcd_put_cur(1,0);
+					  lcd_send_string("     ERROR!");
+				  }
+				  option_show = true;
+	  		  }
+		  	  break;
+	  	  case DISPLAY_DS18B20:
+	  		  DS18B20_ReadAll();
+	  	      DS18B20_StartAll();
+	  			uint8_t i;
+	  		for(i = 0; i < ds18b20_sensor_count; i++)
+	  			{
+	  				if(DS18B20_GetTemperature(i, &temperature))
+	  				{
+	  					if(ds_18b20_tenp_old[i] != temperature){
+							lcd_clear();
+							lcd_put_cur(0,0);
+							char ds18b20_data_to_send[16];
+							snprintf(ds18b20_data_to_send, sizeof(ds18b20_data_to_send), "%u DS18B20",i);
+							lcd_send_string((ds18b20_sensor_count > 1 ? ds18b20_data_to_send: "DS18B20" ));
+							lcd_display_ds18b20(temperature);
+	  					}
+	  					ds_18b20_tenp_old[i] = temperature;
+	  				}
+	  			}
+
+	  			  break;
+	  	  default:
+	  		  	  lcd_clear();
+				  lcd_put_cur(0,0);
+				  char default_data_to_send[20];
+				  snprintf(default_data_to_send, sizeof(default_data_to_send), "ERROR");
+				  lcd_send_string(default_data_to_send);
 	  }
+		  //longPressCounter_old = longPressCounter;
+		  HAL_Delay(1000);
+
   }
   /* USER CODE END 3 */
 }
@@ -266,6 +394,52 @@ static void MX_I2C2_Init(void)
   /* USER CODE BEGIN I2C2_Init 2 */
 
   /* USER CODE END I2C2_Init 2 */
+
+}
+
+/**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 84-1;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 0xffff-1;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
 
 }
 
@@ -378,6 +552,9 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : USER_BUTTON_Pin */
@@ -385,6 +562,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USER_BUTTON_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PC1 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
